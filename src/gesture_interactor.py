@@ -23,6 +23,19 @@ class GestureEvent:
     screen_y: int
 
 
+@dataclasses.dataclass(frozen=True)
+class GestureDebugState:
+    """Instantâneo da máquina de gestos para depuração na UI."""
+
+    index_pinch_active: bool
+    middle_pinch_active: bool
+    dragging: bool
+    pinch_elapsed_s: float | None
+    mid_pinch_elapsed_s: float | None
+    cooldown_left_s: float
+    right_cooldown_left_s: float
+
+
 @dataclasses.dataclass
 class GestureInteractorConfig:
     pinch_closed: float = 0.34
@@ -48,6 +61,19 @@ class GestureInteractor:
         self._r_cooldown_until = 0.0
         self._mid_pinch_active = False
         self._mid_pinch_t0: float | None = None
+
+    def debug_state(self, t: float) -> GestureDebugState:
+        pinch_elapsed = None if self._pinch_t0 is None else max(0.0, t - self._pinch_t0)
+        mid_elapsed = None if self._mid_pinch_t0 is None else max(0.0, t - self._mid_pinch_t0)
+        return GestureDebugState(
+            index_pinch_active=self._pinch_active,
+            middle_pinch_active=self._mid_pinch_active,
+            dragging=self._dragging,
+            pinch_elapsed_s=pinch_elapsed,
+            mid_pinch_elapsed_s=mid_elapsed,
+            cooldown_left_s=max(0.0, self._cooldown_until - t),
+            right_cooldown_left_s=max(0.0, self._r_cooldown_until - t),
+        )
 
     def reset(self) -> list[GestureEvent]:
         out: list[GestureEvent] = []
