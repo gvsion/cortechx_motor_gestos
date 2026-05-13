@@ -75,7 +75,7 @@ except ModuleNotFoundError:
 
 from src.capture import CameraCapture
 from src.gesture_interactor import GestureInteractor, GestureInteractorConfig, GestureKind
-from src.gesture_math import middle_thumb_pinch_ratio, pinch_ratio
+from src.gesture_math import is_scroll_two_finger_pose, middle_thumb_pinch_ratio, pinch_ratio
 from src.hand_tracker import HandTracker, HandTrackerConfig, bgr_to_rgb
 from src.mapping import (
     CursorMapperConfig,
@@ -83,6 +83,7 @@ from src.mapping import (
     primary_index_tip_norm,
     probe_screen_size,
 )
+from src.scroll_control import ScrollController, ScrollControllerConfig
 
 
 def main() -> int:
@@ -110,6 +111,14 @@ def main() -> int:
         "--inject-mouse",
         action="store_true",
         help="Move o cursor do sistema e injeta cliques (pynput; requer permissões no SO).",
+    )
+    parser.add_argument("--no-scroll", action="store_true", help="Desativa rolagem por gesto de dois dedos.")
+    parser.add_argument("--scroll-invert", action="store_true", help="Inverte o sentido vertical da rolagem.")
+    parser.add_argument(
+        "--scroll-sensitivity",
+        type=float,
+        default=None,
+        help="Ganho da rolagem (padrão ~42; maior = mais rápido).",
     )
     args = parser.parse_args()
 
@@ -144,6 +153,12 @@ def main() -> int:
             )
             return 1
 
+    scfg = ScrollControllerConfig()
+    if args.scroll_sensitivity is not None:
+        scfg.sensitivity = args.scroll_sensitivity
+    scroll_ctrl = None if args.no_scroll else ScrollController(scfg)
+    scroll_invert = -1.0 if args.scroll_invert else 1.0
+
     cfg = HandTrackerConfig()
     with CameraCapture(
         device_index=args.camera,
@@ -155,22 +170,46 @@ def main() -> int:
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
         flash_text = ""
         flash_until = 0.0
+        last_cur: tuple[int, int] | None = None
+        prev_scroll_on = False
         while True:
             ok, frame = cam.read_bgr()
             if not ok or frame is None:
                 break
             fh, fw = frame.shape[:2]
+            t = time.monotonic()
             rgb = bgr_to_rgb(frame)
             results = tracker.process(rgb)
             vis = tracker.draw_landmarks(frame, results)
             n = len(results.hand_landmarks) if results.hand_landmarks else 0
             first_lms = results.hand_landmarks[0] if n else None
             tip = primary_index_tip_norm(results.hand_landmarks)
-            cur = cursor_mapper.update(tip)
-            t = time.monotonic()
-            events = gestures.update(t, first_lms, cur)
 
-            if mouse is not None and cur is not None:
+            if scroll_ctrl is not None and first_lms is not None:
+                scroll_dy, scroll_on = scroll_ctrl.update(first_lms, invert=scroll_invert)
+            elif scroll_ctrl is not None:
+                scroll_ctrl.reset()
+                scroll_dy, scroll_on = 0, False
+            else:
+                scroll_dy, scroll_on = 0, False
+
+            if scroll_on:
+                if not prev_scroll_on:
+                    events = gestures.reset()
+                    flash_text, flash_until = "ROLAR (2 dedos)", t + 0.45
+                else:
+                    events = []
+                prev_scroll_on = True
+                cur = last_cur
+            else:
+                if prev_scroll_on:
+                    prev_scroll_on = False
+                cur = cursor_mapper.update(tip)
+                if cur is not None:
+                    last_cur = cur
+                events = gestures.update(t, first_lms, cur)
+
+            if mouse is not None and cur is not None and not scroll_on:
                 mouse.move(cur[0], cur[1])
             for ev in events:
                 if mouse is not None:
@@ -189,6 +228,9 @@ def main() -> int:
                     flash_text, flash_until = "ARRASTAR", t + 0.4
                 elif ev.kind == GestureKind.DRAG_END:
                     flash_text, flash_until = "SOLTAR", t + 0.35
+
+            if mouse is not None and scroll_dy != 0:
+                mouse.scroll_vertical(scroll_dy)
 
             if tip is not None:
                 rx, ry = int(tip[0] * fw), int(tip[1] * fh)
@@ -212,13 +254,25 @@ def main() -> int:
             if first_lms is not None:
                 pr = pinch_ratio(first_lms)
                 mr = middle_thumb_pinch_ratio(first_lms)
+                pose_scroll = is_scroll_two_finger_pose(first_lms)
+                fist = "scroll-pose" if pose_scroll else "outro"
                 cv2.putText(
                     vis,
-                    f"i-pinch {pr:.2f}  m-pinch {mr:.2f}",
+                    f"i-pinch {pr:.2f}  m-pinch {mr:.2f}  {fist}",
                     (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.65,
                     (200, 200, 200),
+                    2,
+                    cv2.LINE_AA,
+                )
+                cv2.putText(
+                    vis,
+                    f"scroll modo={scroll_on}  dy={scroll_dy}",
+                    (10, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55,
+                    (180, 220, 180),
                     2,
                     cv2.LINE_AA,
                 )
@@ -235,10 +289,10 @@ def main() -> int:
                 )
             cv2.putText(
                 vis,
-                f"Maos: {n}  tela {sw}x{sh}  mouse={'on' if mouse else 'off'}  ESC sai",
+                f"Maos: {n}  tela {sw}x{sh}  mouse={'on' if mouse else 'off'}  scroll={'on' if scroll_ctrl else 'off'}  ESC sai",
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
+                0.75,
                 (0, 255, 255),
                 2,
                 cv2.LINE_AA,
