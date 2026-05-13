@@ -67,7 +67,7 @@ class CursorMapperConfig:
 
     screen_width: int
     screen_height: int
-    margin_norm: float = 0.26
+    margin_norm: float = 0.12
     ema_alpha: float = 0.38
     max_step_pixels: float | None = 120.0
 

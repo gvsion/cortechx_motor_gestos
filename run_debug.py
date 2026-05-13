@@ -82,6 +82,23 @@ from src.hand_tracker import bgr_to_rgb
 from src.mapping import probe_screen_size
 from src.pipeline import GestureMotor, GestureMotorConfig, apply_pynput_mouse
 
+import numpy as np
+
+
+def _letterbox_to_display(img: np.ndarray, disp_w: int, disp_h: int) -> np.ndarray:
+    """Escala para caber em disp_w x disp_h mantendo proporção (barras pretas se preciso)."""
+    h, w = img.shape[:2]
+    dw, dh = max(1, disp_w), max(1, disp_h)
+    scale = min(dw / max(w, 1), dh / max(h, 1))
+    nw, nh = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+    resized = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
+    if nw == dw and nh == dh:
+        return resized
+    canvas = np.zeros((dh, dw, 3), dtype=np.uint8)
+    ox, oy = (dw - nw) // 2, (dh - nh) // 2
+    canvas[oy : oy + nh, ox : ox + nw] = resized
+    return canvas
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Debug: câmera e landmarks das mãos.")
@@ -94,9 +111,9 @@ def main() -> int:
     parser.add_argument(
         "--margin",
         type=float,
-        default=0.26,
-        help="Margem normalizada [0,0.49] em X e Y: a zona central da imagem mapeia na tela inteira. "
-        "Maior = menos extensão do braço para chegar aos cantos (padrão 0.26).",
+        default=0.12,
+        help="Margem normalizada [0,0.49] em X e Y: regiao central mapeia na tela do totem. "
+        "Menor = retangulo ciano maior no video (mais amplitude do dedo para cantos); maior = menos extensao do braco.",
     )
     parser.add_argument("--ema", type=float, default=0.38, help="Peso do frame atual na suavização EMA (0-1).")
     parser.add_argument(
@@ -124,6 +141,11 @@ def main() -> int:
         help="Sem janela OpenCV (uso em totem). Encerre com Ctrl+C.",
     )
     parser.add_argument(
+        "--windowed",
+        action="store_true",
+        help="Janela redimensionável em vez de ecrã inteiro (OpenCV).",
+    )
+    parser.add_argument(
         "--log-events",
         action="store_true",
         help="Com --headless, registra eventos de gesto no stderr.",
@@ -134,6 +156,8 @@ def main() -> int:
         sw, sh = args.screen_width, args.screen_height
     else:
         sw, sh = probe_screen_size()
+
+    disp_w, disp_h = probe_screen_size()
 
     max_step = None if args.max_step <= 0 else args.max_step
     motor_cfg = GestureMotorConfig(
@@ -168,8 +192,16 @@ def main() -> int:
         height=args.height,
     ) as cam, GestureMotor(motor_cfg) as motor:
         win = "Motor de Gestos — debug"
+        display_fullscreen_done = False
         if not args.headless:
             cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+            if not args.windowed:
+                try:
+                    cv2.resizeWindow(win, disp_w, disp_h)
+                    cv2.moveWindow(win, 0, 0)
+                    cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                except cv2.error:
+                    pass
         flash_text = ""
         flash_until = 0.0
         prev_scroll_on = False
@@ -255,7 +287,19 @@ def main() -> int:
                     flash_until=flash_until,
                     touch_lines=touch_lines,
                 )
-                cv2.imshow(win, composed)
+                if args.windowed:
+                    show = composed
+                else:
+                    show = _letterbox_to_display(composed, disp_w, disp_h)
+                cv2.imshow(win, show)
+                if not args.windowed and not display_fullscreen_done:
+                    try:
+                        cv2.resizeWindow(win, disp_w, disp_h)
+                        cv2.moveWindow(win, 0, 0)
+                        cv2.setWindowProperty(win, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                    except cv2.error:
+                        pass
+                    display_fullscreen_done = True
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:
                     break

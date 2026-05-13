@@ -2,10 +2,21 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Motor de Gestos: run_debug (ecra inteiro)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_debug.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "python": "${workspaceFolder}/.venv/bin/python3",
+      "justMyCode": true
+    },
+    {
       "name": "Motor de Gestos: run_debug (janela)",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/run_debug.py",
+      "args": ["--windowed"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "python": "${workspaceFolder}/.venv/bin/python3",

@@ -34,7 +34,7 @@ class ScrollControllerConfig:
     """Entrada: N frames com pose de scroll. Saída: M frames seguidos fora da pose (ou sem mão)."""
 
     pose_steady_frames: int = 5
-    pose_release_frames: int = 10
+    pose_release_frames: int = 5
     dead_zone: float = 0.0016
     sensitivity: float = 18.0
     ema_alpha: float = 0.26
