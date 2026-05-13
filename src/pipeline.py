@@ -21,7 +21,7 @@ from src.gesture_interactor import (
 )
 from src.hand_tracker import HandTracker, HandTrackerConfig
 from src.mapping import CursorMapperConfig, HandToScreenMapper, MapperFrameDebug, primary_index_tip_norm, tip_norm_to_linear01
-from src.scroll_control import ScrollController, ScrollControllerConfig
+from src.scroll_control import ScrollController, ScrollControllerConfig, ScrollFrameDebug
 
 
 @dataclasses.dataclass
@@ -51,6 +51,7 @@ class MotorOutput:
     scroll_active: bool
     mapping_debug: MapperFrameDebug | None = None
     gesture_debug: GestureDebugState | None = None
+    scroll_debug: ScrollFrameDebug | None = None
 
 
 class GestureMotor:
@@ -117,6 +118,7 @@ class GestureMotor:
         else:
             scroll_dy, scroll_on = 0, False
 
+        scroll_dbg = self._scroll.last_frame_debug if self._scroll is not None else None
         map_dbg: MapperFrameDebug | None
         if scroll_on:
             if not self._prev_scroll_on:
@@ -157,6 +159,7 @@ class GestureMotor:
             scroll_active=scroll_on,
             mapping_debug=map_dbg,
             gesture_debug=gest_dbg,
+            scroll_debug=scroll_dbg,
         )
 
 

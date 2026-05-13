@@ -115,7 +115,7 @@ def main() -> int:
         "--scroll-sensitivity",
         type=float,
         default=None,
-        help="Ganho da rolagem (padrão ~42; maior = mais rápido).",
+        help="Ganho da rolagem (padrão ~48; maior = mais rápido).",
     )
     parser.add_argument(
         "--headless",
@@ -192,6 +192,9 @@ def main() -> int:
 
             if args.log_events and events:
                 print(t, [e.kind.name for e in events], file=sys.stderr)
+
+            if scroll_dy != 0:
+                event_history.append(f"SCROLL {scroll_dy:+d} linhas")
 
             apply_pynput_mouse(mouse, out)
 
