@@ -60,11 +60,14 @@ class MapperFrameDebug:
 
 @dataclasses.dataclass
 class CursorMapperConfig:
-    """Região útil na imagem (margem normalizada) + suavização e limite de velocidade."""
+    """A faixa [margem, 1-margem] na imagem (em X e Y) mapeia para a tela inteira.
+
+    Margem maior = menos amplitude do dedo/braço para ir de canto a canto (útil no totem).
+    """
 
     screen_width: int
     screen_height: int
-    margin_norm: float = 0.15
+    margin_norm: float = 0.12
     ema_alpha: float = 0.38
     max_step_pixels: float | None = 120.0
 
