@@ -26,8 +26,9 @@ def draw_scroll_feedback(vis_bgr: np.ndarray, out: MotorOutput, *, scroll_enable
         return
     fh, fw = vis_bgr.shape[:2]
     need = max(1, sd.steady_frames_needed)
+    rel_need = max(1, sd.exit_frames_needed)
 
-    if sd.pose_matched and not sd.scroll_mode_active:
+    if not sd.scroll_mode_active and sd.pose_matched:
         ratio = min(1.0, sd.pose_streak / need)
         bw = int((fw - 24) * ratio)
         cv2.rectangle(vis_bgr, (12, 6), (fw - 12, 24), (45, 45, 50), -1)
@@ -35,11 +36,28 @@ def draw_scroll_feedback(vis_bgr: np.ndarray, out: MotorOutput, *, scroll_enable
         cv2.rectangle(vis_bgr, (12, 6), (fw - 12, 24), (90, 90, 95), 1, cv2.LINE_AA)
         cv2.putText(
             vis_bgr,
-            f"SCROLL armando {sd.pose_streak}/{need}",
+            f"SCROLL engrenagem {sd.pose_streak}/{need}",
             (18, 20),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.52,
             (240, 240, 245),
+            1,
+            cv2.LINE_AA,
+        )
+
+    if sd.scroll_mode_active and not sd.pose_matched:
+        ratio = min(1.0, sd.invalid_exit_streak / rel_need) if rel_need > 0 else 0.0
+        bw = int((fw - 24) * ratio)
+        cv2.rectangle(vis_bgr, (12, 6), (fw - 12, 24), (42, 48, 45), -1)
+        cv2.rectangle(vis_bgr, (12, 6), (12 + max(0, bw), 24), (0, 120, 255), -1)
+        cv2.rectangle(vis_bgr, (12, 6), (fw - 12, 24), (95, 100, 90), 1, cv2.LINE_AA)
+        cv2.putText(
+            vis_bgr,
+            f"Modo scroll: pose off {sd.invalid_exit_streak}/{rel_need}",
+            (18, 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.46,
+            (240, 245, 230),
             1,
             cv2.LINE_AA,
         )
@@ -91,14 +109,25 @@ def draw_scroll_feedback(vis_bgr: np.ndarray, out: MotorOutput, *, scroll_enable
         cv2.rectangle(vis_bgr, (x0 - 12, y0 - th - 12), (x0 + tw + 12, y0 + 8), (0, 220, 255), -1)
         cv2.rectangle(vis_bgr, (x0 - 12, y0 - th - 12), (x0 + tw + 12, y0 + 8), (0, 120, 200), 2, cv2.LINE_AA)
         cv2.putText(vis_bgr, msg, (x0, y0), font, scale, (25, 25, 30), thick, cv2.LINE_AA)
+    elif sd.scroll_mode_active and sd.pose_matched:
+        cv2.putText(
+            vis_bgr,
+            "Modo scroll: mexa as PONTAS indice+medio",
+            (12, fh - 14),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.46,
+            (200, 230, 200),
+            1,
+            cv2.LINE_AA,
+        )
     elif sd.scroll_mode_active:
         cv2.putText(
             vis_bgr,
-            "SCROLL ativo — deslize a mao na vertical",
+            "Pose fora do padrao — modo seguro (volte ou aguarde sair)",
             (12, fh - 14),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.48,
-            (200, 230, 200),
+            0.42,
+            (210, 200, 180),
             1,
             cv2.LINE_AA,
         )
@@ -206,14 +235,26 @@ def _build_debug_panel(
     y += 10
 
     if cfg.scroll_enabled and out.scroll_debug is not None:
-        y = _section_header(panel, y, "SCROLL — dois dedos", _SCROLL_HEADER)
+        y = _section_header(panel, y, "SCROLL — modo com trava", _SCROLL_HEADER)
         sd = out.scroll_debug
         sc_lines = [
-            f"Pose: {'ok' if sd.pose_matched else 'nao'}   modo scroll: {'SIM' if sd.scroll_mode_active else 'nao'}",
-            f"Armamento: {sd.pose_streak}/{sd.steady_frames_needed} frames estaveis",
-            f"dy frame: {out.scroll_dy:+d}   raw_y: {sd.raw_delta_y:+.5f}   ema_v: {sd.ema_velocity:+.5f}",
-            f"y ref (norm): {sd.reference_y:.4f}" if sd.reference_y is not None else "y ref: —",
+            "Ref. Y = media pontas indicador + medio (so com pose OK)",
+            "A pose de 2 dedos ARMA o modo; o modo tolera varios frames sem pose.",
+            f"Pose neste frame: {'ok' if sd.pose_matched else 'nao'}   modo scroll: {'SIM' if sd.scroll_mode_active else 'nao'}",
         ]
+        if not sd.scroll_mode_active:
+            sc_lines.append(f"Ativar modo: {sd.pose_streak}/{sd.steady_frames_needed} frames seguidos com pose ok")
+        else:
+            sc_lines.append(
+                "Modo travado — pose relaxada (mais margem lateral); falhas longas contam para sair."
+            )
+        sc_lines.extend(
+            [
+                f"Sair do modo: {sd.invalid_exit_streak}/{sd.exit_frames_needed} frames sem pose ou sem mao",
+                f"dy frame: {out.scroll_dy:+d}   raw_y: {sd.raw_delta_y:+.5f}   ema_v: {sd.ema_velocity:+.5f}",
+                f"y pontas (norm): {sd.reference_y:.4f}" if sd.reference_y is not None else "y pontas: — (pose off / reancoragem)",
+            ]
+        )
         y = _put_lines(panel, 10, y, sc_lines, (220, 235, 240), scale=0.38, line_step=16)
         bar_w = PANEL_W - 24
         bh = 12

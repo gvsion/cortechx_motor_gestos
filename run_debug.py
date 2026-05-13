@@ -94,8 +94,9 @@ def main() -> int:
     parser.add_argument(
         "--margin",
         type=float,
-        default=0.15,
-        help="Margem normalizada [0,0.49]: região confortável da mão mapeia na tela inteira.",
+        default=0.26,
+        help="Margem normalizada [0,0.49] em X e Y: a zona central da imagem mapeia na tela inteira. "
+        "Maior = menos extensão do braço para chegar aos cantos (padrão 0.26).",
     )
     parser.add_argument("--ema", type=float, default=0.38, help="Peso do frame atual na suavização EMA (0-1).")
     parser.add_argument(
@@ -115,7 +116,7 @@ def main() -> int:
         "--scroll-sensitivity",
         type=float,
         default=None,
-        help="Ganho da rolagem (padrão ~48; maior = mais rápido).",
+        help="Ganho da rolagem (padrão ~18; maior = mais rápido, ex. 24).",
     )
     parser.add_argument(
         "--headless",
