@@ -40,6 +40,24 @@ def _norm_to_01(value: float, lo: float, hi: float) -> float:
     return float(np.clip((value - lo) / (hi - lo), 0.0, 1.0))
 
 
+def tip_norm_to_linear01(tip_norm: tuple[float, float], margin_norm: float) -> tuple[float, float]:
+    """Projeta a ponta normalizada na faixa [margem, 1-margem] para [0,1] (sem EMA)."""
+    m = float(np.clip(margin_norm, 0.0, 0.49))
+    x0, x1, y0, y1 = m, 1.0 - m, m, 1.0 - m
+    nx, ny = tip_norm
+    return _norm_to_01(nx, x0, x1), _norm_to_01(ny, y0, y1)
+
+
+@dataclasses.dataclass(frozen=True)
+class MapperFrameDebug:
+    """Valores de um frame após margem, suavização e conversão para pixels da tela."""
+
+    tip_norm_xy: tuple[float, float]
+    linear01_xy: tuple[float, float]
+    smooth01_xy: tuple[float, float]
+    screen_xy: tuple[int, int]
+
+
 @dataclasses.dataclass
 class CursorMapperConfig:
     """Região útil na imagem (margem normalizada) + suavização e limite de velocidade."""
@@ -65,10 +83,23 @@ class HandToScreenMapper:
         self._ux: float | None = None
         self._uy: float | None = None
         self._prev_screen: tuple[int, int] | None = None
+        self._last_debug: MapperFrameDebug | None = None
+
+    @property
+    def smoothed_norm01(self) -> tuple[float, float] | None:
+        """Último (ux,uy) em [0,1] após EMA; None se o cursor ainda não foi inicializado."""
+        if self._ux is None or self._uy is None:
+            return None
+        return (float(self._ux), float(self._uy))
 
     def reset(self) -> None:
         self._ux = self._uy = None
         self._prev_screen = None
+        self._last_debug = None
+
+    @property
+    def last_frame_debug(self) -> MapperFrameDebug | None:
+        return self._last_debug
 
     def update(self, tip_norm: tuple[float, float] | None) -> tuple[int, int] | None:
         """Recebe (x,y) na imagem normalizada ou None se não houver mão; devolve (sx,sy) na tela."""
@@ -91,6 +122,12 @@ class HandToScreenMapper:
         sy = int(np.clip(sy, 0, self._sh - 1))
         sx, sy = self._apply_max_step(sx, sy)
         self._prev_screen = (sx, sy)
+        self._last_debug = MapperFrameDebug(
+            tip_norm_xy=(float(nx), float(ny)),
+            linear01_xy=(float(tx), float(ty)),
+            smooth01_xy=(float(self._ux), float(self._uy)),
+            screen_xy=(sx, sy),
+        )
         return sx, sy
 
     def _apply_max_step(self, sx: int, sy: int) -> tuple[int, int]:
