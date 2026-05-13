@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -73,6 +74,8 @@ except ModuleNotFoundError:
         raise SystemExit(1) from None
 
 from src.capture import CameraCapture
+from src.gesture_interactor import GestureInteractor, GestureInteractorConfig, GestureKind
+from src.gesture_math import pinch_ratio
 from src.hand_tracker import HandTracker, HandTrackerConfig, bgr_to_rgb
 from src.mapping import (
     CursorMapperConfig,
@@ -103,6 +106,11 @@ def main() -> int:
         default=120.0,
         help="Máximo de pixels na tela por frame (anti-salto); 0 desliga.",
     )
+    parser.add_argument(
+        "--inject-mouse",
+        action="store_true",
+        help="Move o cursor do sistema e injeta cliques (pynput; requer permissões no SO).",
+    )
     args = parser.parse_args()
 
     if args.screen_width is not None and args.screen_height is not None:
@@ -119,6 +127,22 @@ def main() -> int:
         max_step_pixels=max_step,
     )
     cursor_mapper = HandToScreenMapper(map_cfg)
+    gesture_cfg = GestureInteractorConfig()
+    gestures = GestureInteractor(gesture_cfg)
+
+    mouse = None
+    if args.inject_mouse:
+        try:
+            from src.mouse_inject import MouseInjector
+
+            mouse = MouseInjector()
+        except ImportError:
+            print(
+                "Instale pynput para --inject-mouse:\n"
+                f"  {sys.executable} -m pip install pynput",
+                file=sys.stderr,
+            )
+            return 1
 
     cfg = HandTrackerConfig()
     with CameraCapture(
@@ -129,6 +153,8 @@ def main() -> int:
     ) as cam, HandTracker(cfg) as tracker:
         win = "Motor de Gestos — debug"
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+        flash_text = ""
+        flash_until = 0.0
         while True:
             ok, frame = cam.read_bgr()
             if not ok or frame is None:
@@ -138,8 +164,32 @@ def main() -> int:
             results = tracker.process(rgb)
             vis = tracker.draw_landmarks(frame, results)
             n = len(results.hand_landmarks) if results.hand_landmarks else 0
+            first_lms = results.hand_landmarks[0] if n else None
             tip = primary_index_tip_norm(results.hand_landmarks)
             cur = cursor_mapper.update(tip)
+            t = time.monotonic()
+            events = gestures.update(t, first_lms, cur)
+
+            if mouse is not None and cur is not None:
+                mouse.move(cur[0], cur[1])
+            for ev in events:
+                if mouse is not None:
+                    if ev.kind == GestureKind.LEFT_CLICK:
+                        mouse.left_click()
+                    elif ev.kind == GestureKind.RIGHT_CLICK:
+                        mouse.right_click()
+                    elif ev.kind == GestureKind.DRAG_START:
+                        mouse.left_down()
+                    elif ev.kind == GestureKind.DRAG_END:
+                        mouse.left_up()
+                label = {GestureKind.LEFT_CLICK: "CLIQUE ESQ", GestureKind.RIGHT_CLICK: "CLIQUE DIR"}.get(ev.kind)
+                if label:
+                    flash_text, flash_until = label, t + 0.55
+                elif ev.kind == GestureKind.DRAG_START:
+                    flash_text, flash_until = "ARRASTAR", t + 0.4
+                elif ev.kind == GestureKind.DRAG_END:
+                    flash_text, flash_until = "SOLTAR", t + 0.35
+
             if tip is not None:
                 rx, ry = int(tip[0] * fw), int(tip[1] * fh)
                 cv2.circle(vis, (rx, ry), 5, (0, 128, 255), 1, cv2.LINE_AA)
@@ -159,9 +209,32 @@ def main() -> int:
                     1,
                     cv2.LINE_AA,
                 )
+            if first_lms is not None:
+                pr = pinch_ratio(first_lms)
+                cv2.putText(
+                    vis,
+                    f"pinch {pr:.2f}",
+                    (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65,
+                    (200, 200, 200),
+                    2,
+                    cv2.LINE_AA,
+                )
+            if t < flash_until and flash_text:
+                cv2.putText(
+                    vis,
+                    flash_text,
+                    (fw // 2 - 80, fh // 2),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.0,
+                    (0, 255, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
             cv2.putText(
                 vis,
-                f"Maos: {n}  tela {sw}x{sh}  ESC sai",
+                f"Maos: {n}  tela {sw}x{sh}  mouse={'on' if mouse else 'off'}  ESC sai",
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.8,
