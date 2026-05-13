@@ -1,4 +1,4 @@
-"""Máquina de gestos: pinça (clique / arrastar) e mão em V (clique direito)."""
+"""Máquina de gestos: pinça índice (clique esquerdo / arrastar) e pinça médio (clique direito)."""
 
 from __future__ import annotations
 
@@ -27,11 +27,12 @@ class GestureEvent:
 class GestureInteractorConfig:
     pinch_closed: float = 0.34
     pinch_open: float = 0.48
+    right_pinch_closed: float = 0.36
+    right_pinch_open: float = 0.50
     tap_min_s: float = 0.04
     tap_max_s: float = 0.39
     drag_hold_s: float = 0.42
     click_cooldown_s: float = 0.22
-    peace_stable_frames: int = 10
     right_cooldown_s: float = 0.45
 
 
@@ -45,8 +46,8 @@ class GestureInteractor:
         self._dragging = False
         self._cooldown_until = 0.0
         self._r_cooldown_until = 0.0
-        self._peace_frames = 0
-        self._peace_latched = False
+        self._mid_pinch_active = False
+        self._mid_pinch_t0: float | None = None
 
     def reset(self) -> list[GestureEvent]:
         out: list[GestureEvent] = []
@@ -55,8 +56,8 @@ class GestureInteractor:
         self._pinch_active = False
         self._pinch_t0 = None
         self._dragging = False
-        self._peace_frames = 0
-        self._peace_latched = False
+        self._mid_pinch_active = False
+        self._mid_pinch_t0 = None
         return out
 
     def update(
@@ -76,6 +77,7 @@ class GestureInteractor:
         pinched = gm.pinch_active(ratio, old_pinch, self._cfg.pinch_closed, self._cfg.pinch_open)
 
         if pinched and not old_pinch:
+            self._reset_middle_pinch()
             self._pinch_t0 = t
 
         if pinched and self._pinch_t0 is not None and not self._dragging:
@@ -88,14 +90,42 @@ class GestureInteractor:
 
         self._pinch_active = pinched
 
-        if not pinched and not self._dragging and t >= self._r_cooldown_until and t >= self._cooldown_until:
-            self._poll_right_click(landmarks, ratio, sx, sy, t, events)
-        else:
-            if not gm.is_peace_for_right_click(landmarks, ratio, self._cfg.pinch_open):
-                self._peace_latched = False
-                self._peace_frames = 0
+        if (
+            not pinched
+            and not self._dragging
+            and t >= self._r_cooldown_until
+            and t >= self._cooldown_until
+        ):
+            self._update_middle_thumb_pinch(t, landmarks, sx, sy, pinched, events)
 
         return events
+
+    def _reset_middle_pinch(self) -> None:
+        self._mid_pinch_active = False
+        self._mid_pinch_t0 = None
+
+    def _update_middle_thumb_pinch(
+        self,
+        t: float,
+        landmarks: list[Any],
+        sx: int,
+        sy: int,
+        index_pinched: bool,
+        events: list[GestureEvent],
+    ) -> None:
+        mid_ratio = gm.middle_thumb_pinch_ratio(landmarks)
+        old_mid = self._mid_pinch_active
+        mid_pinched = gm.pinch_active(
+            mid_ratio,
+            old_mid,
+            self._cfg.right_pinch_closed,
+            self._cfg.right_pinch_open,
+        )
+        if mid_pinched and not old_mid:
+            self._mid_pinch_t0 = t
+        if not mid_pinched and old_mid:
+            self._on_middle_pinch_release(t, sx, sy, index_pinched, events)
+        self._mid_pinch_active = mid_pinched
 
     def _on_pinch_release(self, t: float, sx: int, sy: int, events: list[GestureEvent]) -> None:
         if self._pinch_t0 is None:
@@ -110,24 +140,21 @@ class GestureInteractor:
                 self._cooldown_until = t + self._cfg.click_cooldown_s
         self._pinch_t0 = None
 
-    def _poll_right_click(
+    def _on_middle_pinch_release(
         self,
-        landmarks: list[Any],
-        ratio: float,
+        t: float,
         sx: int,
         sy: int,
-        t: float,
+        index_pinched: bool,
         events: list[GestureEvent],
     ) -> None:
-        if gm.is_peace_for_right_click(landmarks, ratio, self._cfg.pinch_open):
-            self._peace_frames += 1
-        else:
-            self._peace_frames = 0
-            self._peace_latched = False
-        if self._peace_latched:
+        if self._mid_pinch_t0 is None:
             return
-        if self._peace_frames >= self._cfg.peace_stable_frames:
+        if index_pinched:
+            self._mid_pinch_t0 = None
+            return
+        elapsed = t - self._mid_pinch_t0
+        if self._cfg.tap_min_s <= elapsed <= self._cfg.tap_max_s:
             events.append(GestureEvent(GestureKind.RIGHT_CLICK, sx, sy))
-            self._peace_latched = True
-            self._peace_frames = 0
             self._r_cooldown_until = t + self._cfg.right_cooldown_s
+        self._mid_pinch_t0 = None

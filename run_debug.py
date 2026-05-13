@@ -75,7 +75,7 @@ except ModuleNotFoundError:
 
 from src.capture import CameraCapture
 from src.gesture_interactor import GestureInteractor, GestureInteractorConfig, GestureKind
-from src.gesture_math import pinch_ratio
+from src.gesture_math import middle_thumb_pinch_ratio, pinch_ratio
 from src.hand_tracker import HandTracker, HandTrackerConfig, bgr_to_rgb
 from src.mapping import (
     CursorMapperConfig,
@@ -211,9 +211,10 @@ def main() -> int:
                 )
             if first_lms is not None:
                 pr = pinch_ratio(first_lms)
+                mr = middle_thumb_pinch_ratio(first_lms)
                 cv2.putText(
                     vis,
-                    f"pinch {pr:.2f}",
+                    f"i-pinch {pr:.2f}  m-pinch {mr:.2f}",
                     (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.65,
