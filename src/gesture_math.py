@@ -12,6 +12,11 @@ INDEX_MCP = 5
 INDEX_TIP = 8
 MIDDLE_MCP = 9
 MIDDLE_TIP = 12
+RING_MCP = 13
+RING_TIP = 16
+PINKY_MCP = 17
+PINKY_TIP = 20
+THUMB_MCP = 2
 
 
 def _lm_dist(a: Any, b: Any) -> float:
@@ -38,3 +43,28 @@ def pinch_active(ratio: float, was_active: bool, closed_thr: float, open_thr: fl
     if was_active:
         return ratio < open_thr
     return ratio < closed_thr
+
+
+def is_scroll_two_finger_pose(landmarks: list[Any]) -> bool:
+    """Indicador e médio estendidos; anelar e mindinho recolhidos; polegar recolhido; sem pinças de clique."""
+    scale = hand_scale(landmarks)
+    if scale < 1e-4:
+        return False
+
+    def span_tip_mcp(tip_i: int, mcp_i: int) -> float:
+        return _lm_dist(landmarks[tip_i], landmarks[mcp_i]) / scale
+
+    if span_tip_mcp(INDEX_TIP, INDEX_MCP) < 0.78 or span_tip_mcp(MIDDLE_TIP, MIDDLE_MCP) < 0.78:
+        return False
+    if span_tip_mcp(RING_TIP, RING_MCP) > 0.54 or span_tip_mcp(PINKY_TIP, PINKY_MCP) > 0.54:
+        return False
+    if _lm_dist(landmarks[THUMB_TIP], landmarks[THUMB_MCP]) / scale > 0.56:
+        return False
+    if pinch_ratio(landmarks) < 0.40 or middle_thumb_pinch_ratio(landmarks) < 0.40:
+        return False
+    return True
+
+
+def scroll_reference_y(landmarks: list[Any]) -> float:
+    """Altura normalizada da mão para rolagem (pulso + base do médio, menos ruído que só o pulso)."""
+    return 0.5 * (float(landmarks[WRIST].y) + float(landmarks[MIDDLE_MCP].y))

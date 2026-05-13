@@ -27,3 +27,9 @@ class MouseInjector:
 
     def right_click(self) -> None:
         self._c.click(self._right, 1)
+
+    def scroll_vertical(self, dy: int) -> None:
+        """dy em passos da roda (pynput); sinal depende do SO / driver."""
+        if dy == 0:
+            return
+        self._c.scroll(0, int(dy))
