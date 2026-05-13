@@ -38,19 +38,38 @@ except ModuleNotFoundError:
     try:
         import cv2
     except ModuleNotFoundError:
-        print(
-            "OpenCV (cv2) não está instalado neste interpretador.\n"
-            f"  Usado agora: {sys.executable}\n"
-            "  Crie o ambiente e instale as dependências, depois rode de novo:\n"
-            f"    cd {ROOT}\n"
-            "    python3 -m venv .venv\n"
-            "    . .venv/bin/activate\n"
-            "    pip install -r requirements.txt\n"
-            "    python run_debug.py\n"
-            "  Ou, se o .venv já existir com tudo instalado:\n"
-            f"    {ROOT / '.venv' / 'bin' / 'python3'} run_debug.py",
-            file=sys.stderr,
-        )
+        vpy = _venv_python()
+        in_venv = vpy is not None and Path(sys.executable).resolve() == vpy.resolve()
+        lines = [
+            "OpenCV (cv2) não está instalado neste interpretador.",
+            f"  Interpretador: {sys.executable}",
+            "",
+        ]
+        if in_venv:
+            lines.extend(
+                [
+                    "O ambiente virtual está ativo, mas falta o pacote opencv-python.",
+                    "Instale as dependências do projeto:",
+                    f"    {vpy} -m pip install -r {ROOT / 'requirements.txt'}",
+                    "",
+                    "No Cursor/VS Code: confirme que o interpretador selecionado é o .venv do projeto.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "Crie o ambiente e instale as dependências:",
+                    f"    cd {ROOT}",
+                    "    python3 -m venv .venv",
+                    "    . .venv/bin/activate",
+                    "    pip install -r requirements.txt",
+                    "    python run_debug.py",
+                    "",
+                    "Ou use diretamente o Python do venv (se já existir):",
+                    f"    {ROOT / '.venv' / 'bin' / 'python3'} run_debug.py",
+                ]
+            )
+        print("\n".join(lines), file=sys.stderr)
         raise SystemExit(1) from None
 
 from src.capture import CameraCapture

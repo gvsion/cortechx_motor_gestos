@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Motor de Gestos: run_debug",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_debug.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "python": "${workspaceFolder}/.venv/bin/python3",
+      "justMyCode": true
+    }
+  ]
+}
