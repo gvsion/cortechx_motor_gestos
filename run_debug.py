@@ -55,6 +55,12 @@ except ModuleNotFoundError:
 
 from src.capture import CameraCapture
 from src.hand_tracker import HandTracker, HandTrackerConfig, bgr_to_rgb
+from src.mapping import (
+    CursorMapperConfig,
+    HandToScreenMapper,
+    primary_index_tip_norm,
+    probe_screen_size,
+)
 
 
 def main() -> int:
@@ -63,7 +69,37 @@ def main() -> int:
     parser.add_argument("--no-mirror", action="store_true", help="Desativa flip horizontal.")
     parser.add_argument("--width", type=int, default=None, help="Largura solicitada ao driver.")
     parser.add_argument("--height", type=int, default=None, help="Altura solicitada ao driver.")
+    parser.add_argument("--screen-width", type=int, default=None, help="Largura lógica da tela do totem (padrão: detectar).")
+    parser.add_argument("--screen-height", type=int, default=None, help="Altura lógica da tela do totem (padrão: detectar).")
+    parser.add_argument(
+        "--margin",
+        type=float,
+        default=0.15,
+        help="Margem normalizada [0,0.49]: região confortável da mão mapeia na tela inteira.",
+    )
+    parser.add_argument("--ema", type=float, default=0.38, help="Peso do frame atual na suavização EMA (0-1).")
+    parser.add_argument(
+        "--max-step",
+        type=float,
+        default=120.0,
+        help="Máximo de pixels na tela por frame (anti-salto); 0 desliga.",
+    )
     args = parser.parse_args()
+
+    if args.screen_width is not None and args.screen_height is not None:
+        sw, sh = args.screen_width, args.screen_height
+    else:
+        sw, sh = probe_screen_size()
+
+    max_step = None if args.max_step <= 0 else args.max_step
+    map_cfg = CursorMapperConfig(
+        screen_width=sw,
+        screen_height=sh,
+        margin_norm=args.margin,
+        ema_alpha=args.ema,
+        max_step_pixels=max_step,
+    )
+    cursor_mapper = HandToScreenMapper(map_cfg)
 
     cfg = HandTrackerConfig()
     with CameraCapture(
@@ -78,13 +114,35 @@ def main() -> int:
             ok, frame = cam.read_bgr()
             if not ok or frame is None:
                 break
+            fh, fw = frame.shape[:2]
             rgb = bgr_to_rgb(frame)
             results = tracker.process(rgb)
             vis = tracker.draw_landmarks(frame, results)
             n = len(results.hand_landmarks) if results.hand_landmarks else 0
+            tip = primary_index_tip_norm(results.hand_landmarks)
+            cur = cursor_mapper.update(tip)
+            if tip is not None:
+                rx, ry = int(tip[0] * fw), int(tip[1] * fh)
+                cv2.circle(vis, (rx, ry), 5, (0, 128, 255), 1, cv2.LINE_AA)
+            if cur is not None:
+                sx, sy = cur
+                px, py = cursor_mapper.screen_to_preview_frame(sx, sy, fw, fh)
+                cv2.circle(vis, (px, py), 14, (255, 0, 0), 2, cv2.LINE_AA)
+                cv2.circle(vis, (px, py), 3, (255, 0, 0), -1, cv2.LINE_AA)
+                label = f"tela {sx},{sy}"
+                cv2.putText(
+                    vis,
+                    label,
+                    (max(5, px - 60), max(25, py - 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (255, 0, 0),
+                    1,
+                    cv2.LINE_AA,
+                )
             cv2.putText(
                 vis,
-                f"Maos: {n}  ESC sai",
+                f"Maos: {n}  tela {sw}x{sh}  ESC sai",
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.8,
